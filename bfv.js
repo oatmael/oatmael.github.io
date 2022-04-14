@@ -1,11 +1,4 @@
 const DEFAULT_MEMORY_SIZE = 30000;
-const HELLO_WORLD =
-  "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
-const VALID_CHARS = [">", "<", "+", "-", ".", ",", "[", "]"];
-let memory, jump, program, input, output, pointer, programPointer, inputPointer;
-
-let memoryTable = $("#memory");
-let running = false;
 
 const byteToHex = [];
 
@@ -14,28 +7,48 @@ for (let n = 0; n <= 0xff; ++n) {
   byteToHex.push(hexOctet);
 }
 
-function initializeMemoryTable(size = DEFAULT_MEMORY_SIZE) {
-  return new Promise((resolve, reject) => {
-    console.time("initializeMemoryTable");
-    let table = $("<table/>");
+let programWorker = new Worker("bfvWorker.js");
+programWorker.onmessage = function (e) {
+  self[e.data.command](...e.data.args);
+};
 
-    let tableString = ``;
-    for (var i = 0; i < size; i += 12) {
-      tableString += `
+function initializeMemoryTable(size = DEFAULT_MEMORY_SIZE) {
+  console.time("initializeMemoryTable");
+  let memoryTable = $("#memory");
+  let table = $("<table/>");
+
+  let tableString = ``;
+  for (var i = 0; i < size; i += 12) {
+    tableString += `
         <tr>
             <td>${(i + 12).toString(16).toUpperCase().padStart(4, "0")}</td>
             <td id="cell${i}">00 00 00 00 00 00 00 00 00 00 00 00</td>
             <td id="formattedCell${i}">............</td>
         </tr>
       `;
-    }
-    table.html(tableString);
-    console.timeEnd("initializeMemoryTable");
-    resolve(table);
-  });
+  }
+  table.html(tableString);
+
+  memoryTable.html("");
+  memoryTable.append(table);
+  console.timeEnd("initializeMemoryTable");
 }
 
-function refreshTableCell(pointer) {
+function clearProgram() {
+  $("#tape").html("");
+  $("#output").html("");
+}
+
+function updateOutput(output) {
+  $("#output").html(output);
+}
+
+function refreshTape(programPointer) {
+  $("#tape a").css("backgroundColor", "#fdc1c6");
+  $(`#tape a:nth-child(${programPointer})`).css("backgroundColor", "#54c791");
+}
+
+function refreshTableCell(pointer, memory) {
   let blockStart = pointer - (pointer % 12);
   let blockEnd = pointer + 12 - (pointer % 12);
   let memoryBlock = [...memory.slice(blockStart, blockEnd)];
@@ -56,137 +69,50 @@ function refreshTableCell(pointer) {
   );
 }
 
-function clearMemory(size = DEFAULT_MEMORY_SIZE) {
-  console.time("clearMemory");
-  memory = new Uint8Array(size);
-  jump = program = [];
-  pointer = programPointer = inputPointer = 0;
-  input = output = "";
-
-  $("#tape").html("");
-  $("#output").html(output);
-  memoryTable.html("Clearing memory table...");
-  console.timeEnd("clearMemory");
-  initializeMemoryTable(size).then((table) => {
-    memoryTable.html("");
-    memoryTable.append(table);
-  });
-}
-
-function loadMemory(programVal, inputVal, size) {
-  clearMemory(size);
-  programVal = programVal.split("");
-  program = programVal.filter((element) => VALID_CHARS.includes(element));
-  input = inputVal;
-
-  let stack = [];
-  for (var i = 0; i < program.length; i++) {
-    if (program[i] === "[") {
-      stack.push(i);
-    } else if (program[i] === "]") {
-      jump[i] = stack.pop();
-      jump[jump[i]] = i;
-    }
-  }
-
+function loadTape(program) {
   program.forEach((value) => $("#tape").append(`<a>${value}</a>`));
   $("#tape a").css("backgroundColor", "#fdc1c6").css("fontColor", "white");
 }
 
-let commands = {
-  ">": () => ++pointer,
-  "<": () => --pointer,
-  "+": () => {
-    ++memory[pointer];
-    refreshTableCell(pointer);
-  },
-  "-": () => {
-    --memory[pointer];
-    refreshTableCell(pointer);
-  },
-  ",": () => {
-    memory[pointer] = input.charCodeAt(inputPointer++);
-    refreshTableCell(pointer);
-  },
-  ".": () => {
-    output += String.fromCharCode(memory[pointer]);
-  },
-  "[": () => {
-    if (!memory[pointer]) programPointer = jump[programPointer];
-  },
-  "]": () => {
-    if (memory[pointer]) programPointer = jump[programPointer];
-  },
-};
-
-let stepDuration = 1;
-let executeInterval;
-function execute(refreshMemory, restart = true) {
-  let instant = $("#instant").is(":checked");
-  if (running) {
-    running = false;
-    clearInterval(executeInterval);
-  }
-
-  if (restart) {
-    running = true;
-    if (refreshMemory) {
-      loadMemory($("#code").val(), $("#input").val());
-    }
-    if (instant) {
-      executeInstantly();
-    } else {
-      executeInterval = setInterval(executeStep, stepDuration);
-    }
-  }
-}
-
-function executeInstantly() {
-  return new Promise((resolve, reject) => {
-    running = true;
-    while (program[programPointer] !== undefined) {
-      executeStep();
-    }
-    running = false;
-    resolve();
+function stepButton() {
+  programWorker.postMessage({
+    command: "executeStep",
+    args: [],
   });
 }
 
-function setStep() {
-  clearInterval(executeInterval);
-  stepDuration = $("#stepduration").val();
-  executeInterval = setInterval(executeStep, stepDuration);
-}
-
-function executeStep() {
-  if (program[programPointer] === undefined) {
-    clearInterval(executeInterval);
-    running = false;
-    $("#startstop")
-      .removeClass("btn-success")
-      .addClass("btn-danger")
-      .html("Stop");
-    return;
-  }
-  commands[program[programPointer]]();
-  programPointer++;
-  $("#tape a").css("backgroundColor", "#fdc1c6");
-  $(`#tape a:nth-child(${programPointer})`).css("backgroundColor", "#54c791");
-  $("#output").html(output);
-}
-
 function executeButton() {
-  execute(true);
+  programWorker.postMessage({
+    command: "run",
+    args: [
+      $("#instant").is(":checked"),
+      true,
+      $("#code").val(),
+      $("#input").val(),
+    ],
+  });
 }
 
-function toggleStartStop() {
+function startStopButton() {
   let button = $("#startstop");
   if (running) {
     button.addClass("btn-success").removeClass("btn-danger").html("Start");
+    programWorker.postMessage({
+      command: "run",
+      args: [$("#instant").is(":checked")],
+    });
   } else {
     button.removeClass("btn-success").addClass("btn-danger").html("Stop");
+    programWorker.postMessage({
+      command: "stop",
+      args: [],
+    });
   }
-  execute(false, !running);
 }
 
-loadMemory(HELLO_WORLD);
+function setStep() {
+  programWorker.postMessage({
+    command: "setStep",
+    args: [$("#stepduration").val()],
+  });
+}

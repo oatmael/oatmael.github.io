@@ -2,7 +2,9 @@
     <head>
         <style>
             table, #tape a, textarea {
-                font-family: monospace;
+                    font-family: 'Lucida Console', Monaco, monospace!important;
+                    font-size: 12px!important;
+                    line-height: 19px!important;
             }
             td {
                 padding: 0 10 0 10;
@@ -27,10 +29,10 @@
                                 <label class="form-check-label">Instant</label>
                             </div>
                             <div class="col-2 mt-3">
-                                <button type="button" class="btn btn-secondary w-100" onclick="executeStep()">Step</button>
+                                <button type="button" class="btn btn-secondary w-100" onclick="stepButton()">Step</button>
                             </div>
                             <div class="col-2 mt-3">
-                                <button type="button" class="btn btn-success w-100" id="startstop" onclick="toggleStartStop()">Start</button>
+                                <button type="button" class="btn btn-success w-100" id="startstop" onclick="startStopButton()">Start</button>
                             </div>
                             <div class="col-3 mt-3">
                                 <button type="button" class="btn btn-primary w-100" onclick="executeButton()">Execute</button>
